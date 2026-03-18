@@ -39,7 +39,7 @@ class Runner:
                  latent_std: Optional[torch.Tensor] = None):
         self.exp_id = cfg.exp_id
         self.use_amp = cfg.amp
-        self.enable_grad_scaler = cfg.enable_grad_scaler
+        self.enable_grad_scaler = cfg.get('enable_grad_scaler', False)
         self.for_training = for_training
         self.cfg = cfg
 
@@ -440,11 +440,15 @@ class Runner:
             x1_hat = self.network.module.unnormalize(x1_hat)
             mel = self.features.decode(x1_hat)
             audio = self.features.vocode(mel).cpu()
+            
             for i in range(audio.shape[0]):
                 video_id = data['id'][i]
                 if (not self.for_training) and i == 0:
                     # save very few videos
-                    self.test_video_joiner.join(video_id, f'{video_id}', audio[i].transpose(0, 1))
+                    try:
+                        self.test_video_joiner.join(video_id, f'{video_id}', audio[i].transpose(0, 1))
+                    except Exception as e:
+                        self.log.warning(f"Skipping test video join for {video_id}: {e}")
 
                 if data_cfg.output_subdir is not None:
                     # validation
@@ -453,14 +457,17 @@ class Runner:
                     else:
                         iter_naming = 'val-cache'
                     audio_dir = self.log.log_audio(iter_naming,
-                                                   f'{video_id}',
-                                                   audio[i],
-                                                   it=None,
-                                                   sample_rate=self.sample_rate,
-                                                   subdir=Path(data_cfg.output_subdir))
+                                                f'{video_id}',
+                                                audio[i],
+                                                it=None,
+                                                sample_rate=self.sample_rate,
+                                                subdir=Path(data_cfg.output_subdir))
                     if save_eval and i == 0:
-                        self.val_video_joiner.join(video_id, f'{iter_naming}-{video_id}',
-                                                   audio[i].transpose(0, 1))
+                        try:
+                            self.val_video_joiner.join(video_id, f'{iter_naming}-{video_id}',
+                                                    audio[i].transpose(0, 1))
+                        except Exception as e:
+                            self.log.warning(f"Skipping val video join for {video_id}: {e}")
                 else:
                     # full test set, usually
                     audio_dir = self.log.log_audio(f'{data_cfg.tag}-sampled',

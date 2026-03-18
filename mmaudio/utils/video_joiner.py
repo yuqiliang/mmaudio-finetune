@@ -2,7 +2,11 @@ from pathlib import Path
 from typing import Union
 
 import torch
-from torio.io import StreamingMediaDecoder, StreamingMediaEncoder
+try:
+    from torio.io import StreamingMediaDecoder, StreamingMediaEncoder
+except ImportError:
+    StreamingMediaDecoder = None
+    StreamingMediaEncoder = None
 
 
 class VideoJoiner:

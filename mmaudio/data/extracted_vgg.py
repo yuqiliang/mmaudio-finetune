@@ -83,14 +83,18 @@ class ExtractedVGG(Dataset):
         return td
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        item = self.df_list[idx]
+
+        caption_value = item.get('caption', item.get('label', 'urban soundscape'))
+
         data = {
-            'id': self.df_list[idx]['id'],
+            'id': item['id'],
             'a_mean': self.mean[idx],
             'a_std': self.std[idx],
             'clip_features': self.clip_features[idx],
             'sync_features': self.sync_features[idx],
             'text_features': self.text_features[idx],
-            'caption': self.df_list[idx]['label'],
+            'caption': caption_value,
             'video_exist': self.video_exist,
             'text_exist': self.text_exist,
         }

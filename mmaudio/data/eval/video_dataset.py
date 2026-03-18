@@ -8,7 +8,10 @@ import pandas as pd
 import torch
 from torch.utils.data.dataset import Dataset
 from torchvision.transforms import v2
-from torio.io import StreamingMediaDecoder
+try:
+    from torio.io import StreamingMediaDecoder
+except ImportError:
+    StreamingMediaDecoder = None
 
 from mmaudio.utils.dist_utils import local_rank
 

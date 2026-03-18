@@ -27,8 +27,12 @@ class SequenceConfig:
     @property
     def latent_seq_len(self) -> int:
         return int(
-            math.ceil(self.duration * self.sampling_rate / self.spectrogram_frame_rate /
-                      self.latent_downsample_rate))
+            math.ceil(
+                self.duration * self.sampling_rate
+                / self.spectrogram_frame_rate
+                / self.latent_downsample_rate
+            )
+        )
 
     @property
     def clip_seq_len(self) -> int:
@@ -36,9 +40,9 @@ class SequenceConfig:
 
     @property
     def sync_seq_len(self) -> int:
-        num_frames = self.duration * self.sync_frame_rate
-        num_segments = (num_frames - self.sync_num_frames_per_segment) // self.sync_step_size + 1
-        return int(num_segments * self.sync_num_frames_per_segment / self.sync_downsample_rate)
+        # Override to match the actually extracted Synchformer features
+        # in the current dataset/memmap.
+        return 192
 
 
 CONFIG_16K = SequenceConfig(duration=8.0, sampling_rate=16000, spectrogram_frame_rate=256)

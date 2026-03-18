@@ -52,9 +52,9 @@ log.setLevel(logging.INFO)
 
 # uncomment the train/test/val sets to extract latents for them
 data_cfg = {
-    'example': {
-        'root': './training/example_videos',
-        'subset_name': './training/example_video.tsv',
+     'train': {
+        'root': '../training_videos',
+        'subset_name': './training/my_video_train.tsv',
         'normalize_audio': True,
     },
     # 'train': {

@@ -23,22 +23,22 @@ VGGSound_val:
   sample_duration_sec: 8.0
 
 ExtractedVGG:
-  tsv: ../data/v1-16-memmap/vgg-train.tsv
-  memmap_dir: ../data/v1-16-memmap/vgg-train
-
-ExtractedVGG_test:
-  tag: test
-  gt_cache: ../data/eval-cache/vggsound-test
-  output_subdir: null
-  tsv: ../data/v1-16-memmap/vgg-test.tsv
-  memmap_dir: ../data/v1-16-memmap/vgg-test
+  tsv: ./fine_tune/training/video_train_ft.tsv
+  memmap_dir: ./mmaudio_latents_stride8/training_latents
 
 ExtractedVGG_val:
   tag: val
-  gt_cache: ../data/eval-cache/vggsound-val
+  gt_cache: null
   output_subdir: val
-  tsv: ../data/v1-16-memmap/vgg-val.tsv
-  memmap_dir: ../data/v1-16-memmap/vgg-val
+  tsv: ./fine_tune/training/video_val_ft.tsv
+  memmap_dir: ./mmaudio_latents_stride8/training_latents
+
+ExtractedVGG_test:
+  tag: test
+  gt_cache: null
+  output_subdir: null
+  tsv: ./fine_tune/training/video_test_ft.tsv
+  memmap_dir: ./mmaudio_latents_stride8/training_latents
 
 AudioCaps:
   tsv: ../data/v1-16-memmap/audiocaps.tsv

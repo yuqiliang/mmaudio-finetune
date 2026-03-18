@@ -13,7 +13,7 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, open_dict
 from torch.distributed.elastic.multiprocessing.errors import record
 
-from mmaudio.data.data_setup import setup_training_datasets, setup_val_datasets
+from mmaudio.data.data_setup_urban import setup_training_datasets, setup_val_datasets
 from mmaudio.model.sequence_config import CONFIG_16K, CONFIG_44K
 from mmaudio.runner import Runner
 from mmaudio.sample import sample
@@ -188,15 +188,34 @@ def train(cfg: DictConfig):
 
     # Synthesize EMA
     if local_rank == 0:
-        log.info(f'Synthesizing EMA with sigma={cfg.ema.default_output_sigma}')
-        ema_sigma = cfg.ema.default_output_sigma
-        state_dict = synthesize_ema(cfg, ema_sigma, step=None)
-        save_dir = Path(run_dir) / f'{cfg.exp_id}_ema_final.pth'
-        torch.save(state_dict, save_dir)
-        log.info(f'Synthesized EMA saved to {save_dir}!')
+        if cfg.ema.enable:
+            log.info(f'Synthesizing EMA with sigma={cfg.ema.default_output_sigma}')
+            ema_sigma = cfg.ema.default_output_sigma
+            state_dict = synthesize_ema(cfg, ema_sigma, step=None)
+            save_dir = Path(run_dir) / f'{cfg.exp_id}_ema_final.pth'
+            torch.save(state_dict, save_dir)
+            log.info(f'Synthesized EMA saved to {save_dir}!')
+        else:
+            log.info('EMA disabled, skipping EMA synthesis.')
     distributed.barrier()
 
-    log.info(f'Evaluation: {eval_cfg}')
+    # make eval config follow current training config
+    eval_cfg.data.ExtractedVGG.memmap_dir = cfg.data.ExtractedVGG.memmap_dir
+    eval_cfg.data.ExtractedVGG_val.memmap_dir = cfg.data.ExtractedVGG_val.memmap_dir
+    eval_cfg.data.ExtractedVGG_test.memmap_dir = cfg.data.ExtractedVGG_test.memmap_dir
+
+    eval_cfg.data.ExtractedVGG.tsv = cfg.data.ExtractedVGG.tsv
+    eval_cfg.data.ExtractedVGG_val.tsv = cfg.data.ExtractedVGG_val.tsv
+    eval_cfg.data.ExtractedVGG_test.tsv = cfg.data.ExtractedVGG_test.tsv
+
+    eval_cfg.data_dim = cfg.data_dim
+
+    # Keep evaluation config consistent with debug training setup
+    eval_cfg.compile = False
+    if hasattr(eval_cfg, "ema") and eval_cfg.ema is not None:
+        eval_cfg.ema.enable = False
+
+    log.info(f"Evaluation: {eval_cfg}")
     sample(eval_cfg)
 
     # clean-up

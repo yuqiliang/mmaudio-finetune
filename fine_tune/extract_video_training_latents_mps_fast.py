@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 """
-extract_video_training_latents_mps.py
-Mac-friendly feature extraction for MMAudio fine-tuning.
-Uses custom MacVideoDataset instead of official VGGSound backend.
-
-caffeinate python3 fine_tune/extract_video_training_latents_mps.py \
+extract_video_training_latents_mps_fast.py
+Faster Mac-friendly feature extraction for MMAudio fine-tuning.
+caffeinate python3 fine_tune/extract_video_training_latents_mps_fast.py \
   --latent_dir ./output/latents_debug \
   --output_dir ./output/memmap_debug \
-  --debug_limit 18
-  --batch_size 12
-
-caffeinate python3 fine_tune/extract_video_training_latents_mps.py \
-  --latent_dir ./output/latents \
-  --output_dir ./output/memmap 
+  --debug_limit 16 \
+  --batch_size 2
 """
 
 import gc
@@ -39,7 +33,6 @@ from mmaudio.model.utils.features_utils import FeaturesUtils
 # MODEL CONFIGURATION
 # =========================================================
 
-# 16kHz model
 SAMPLING_RATE = 16000
 DURATION_SEC = 8.0
 NUM_SAMPLES = 128000
@@ -58,12 +51,12 @@ mode = '16k'
 synchformer_ckpt = './ext_weights/synchformer_state_dict.pth'
 
 # =========================================================
-# MAC SETTINGS
+# DEFAULT MAC SETTINGS
 # =========================================================
 
-BATCH_SIZE = 8
-NUM_WORKERS = 0
-MEMORY_CHECK_INTERVAL = 20
+DEFAULT_BATCH_SIZE = 8
+DEFAULT_NUM_WORKERS = 0
+DEFAULT_MEMORY_CHECK_INTERVAL = 100
 
 # =========================================================
 # LOGGING
@@ -126,6 +119,14 @@ def get_device():
         device = torch.device("cpu")
         log.info("⚠️ Using CPU (will be slow)")
     return device
+
+
+def enable_runtime_optimizations():
+    try:
+        torch.set_float32_matmul_precision("high")
+        log.info("✅ torch float32 matmul precision = high")
+    except Exception as e:
+        log.warning(f"Could not set matmul precision: {e}")
 
 
 def clear_memory_cache():
@@ -213,7 +214,7 @@ def verify_data_config():
     return True
 
 
-def setup_dataset(split: str, rank: int, world_size_val: int, debug_limit: int = 0):
+def setup_dataset(split: str, rank: int, world_size_val: int, debug_limit: int, batch_size: int, num_workers: int):
     log.info(f"Setting up dataset for split: {split}")
 
     dataset = MacVideoDataset(
@@ -240,17 +241,38 @@ def setup_dataset(split: str, rank: int, world_size_val: int, debug_limit: int =
 
     loader = DataLoader(
         dataset,
-        batch_size=BATCH_SIZE,
-        num_workers=NUM_WORKERS,
+        batch_size=batch_size,
+        num_workers=num_workers,
         sampler=sampler,
         shuffle=False,
         drop_last=False,
         collate_fn=safe_collate,
-        pin_memory=False,
+        pin_memory=False,          # MPS下通常没什么明显帮助
+        persistent_workers=False,  # num_workers=0时无效，保守起见
     )
 
     log.info(f"Dataset setup complete: {len(dataset)} samples, {len(loader)} batches")
     return dataset, loader
+
+
+def encode_text_with_cache(feature_extractor, captions, text_cache):
+    """
+    captions: list[str]
+    Return: tensor [B, ...]
+    """
+    uncached = []
+    for c in captions:
+        if c not in text_cache:
+            uncached.append(c)
+
+    if uncached:
+        unique_uncached = list(dict.fromkeys(uncached))
+        feats = feature_extractor.encode_text(unique_uncached).detach().cpu()
+        for c, f in zip(unique_uncached, feats):
+            text_cache[c] = f
+
+    stacked = torch.stack([text_cache[c] for c in captions], dim=0)
+    return stacked
 
 
 @torch.inference_mode()
@@ -259,6 +281,7 @@ def extract():
     log.info("=" * 50)
 
     check_system_resources()
+    enable_runtime_optimizations()
 
     if not verify_data_config():
         log.error("❌ Data configuration verification failed")
@@ -270,14 +293,21 @@ def extract():
     parser.add_argument('--latent_dir', type=Path, default=Path('./output/latents'))
     parser.add_argument('--output_dir', type=Path, default=Path('./output/memmap'))
     parser.add_argument('--debug_limit', type=int, default=0)
+    parser.add_argument('--batch_size', type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument('--num_workers', type=int, default=DEFAULT_NUM_WORKERS)
+    parser.add_argument('--memory_check_interval', type=int, default=DEFAULT_MEMORY_CHECK_INTERVAL)
     args = parser.parse_args()
 
     latent_dir = args.latent_dir
     output_dir = args.output_dir
     debug_limit = args.debug_limit
+    batch_size = args.batch_size
+    num_workers = args.num_workers
+    memory_check_interval = args.memory_check_interval
 
     log.info(f"📁 Latent directory: {latent_dir}")
     log.info(f"📁 Output directory: {output_dir}")
+    log.info(f"⚙️ batch_size={batch_size}, num_workers={num_workers}, memory_check_interval={memory_check_interval}")
 
     device = get_device()
 
@@ -304,13 +334,21 @@ def extract():
         this_latent_dir = latent_dir / split
         this_latent_dir.mkdir(parents=True, exist_ok=True)
 
-        dataset, loader = setup_dataset(split, rank, world_size_val, debug_limit)
+        dataset, loader = setup_dataset(
+            split=split,
+            rank=rank,
+            world_size_val=world_size_val,
+            debug_limit=debug_limit,
+            batch_size=batch_size,
+            num_workers=num_workers,
+        )
 
         log.info(f"🔄 Starting feature extraction for {len(dataset)} samples...")
 
         batch_count = 0
         success_count = 0
         failed_batch_count = 0
+        text_cache = {}
 
         for curr_iter, data in enumerate(tqdm(loader, desc=f"Extracting {split}")):
             try:
@@ -324,22 +362,29 @@ def extract():
                     'caption': data['caption'],
                 }
 
-                audio = data['audio'].to(device)
+                # -------- audio --------
+                audio = data['audio'].to(device, non_blocking=False)
                 dist = feature_extractor.encode_audio(audio)
-                output['mean'] = dist.mean.detach().cpu().transpose(1, 2)
-                output['std'] = dist.std.detach().cpu().transpose(1, 2)
+                output['mean'] = dist.mean.detach().cpu().transpose(1, 2).contiguous()
+                output['std'] = dist.std.detach().cpu().transpose(1, 2).contiguous()
+                del audio, dist
 
-                clip_video = data['clip_video'].to(device)
+                # -------- clip video --------
+                clip_video = data['clip_video'].to(device, non_blocking=False)
                 clip_features = feature_extractor.encode_video_with_clip(clip_video)
-                output['clip_features'] = clip_features.detach().cpu()
+                output['clip_features'] = clip_features.detach().cpu().contiguous()
+                del clip_video, clip_features
 
-                sync_video = data['sync_video'].to(device)
+                # -------- sync video --------
+                sync_video = data['sync_video'].to(device, non_blocking=False)
                 sync_features = feature_extractor.encode_video_with_sync(sync_video)
-                output['sync_features'] = sync_features.detach().cpu()
+                output['sync_features'] = sync_features.detach().cpu().contiguous()
+                del sync_video, sync_features
 
-                caption = data['caption']
-                text_features = feature_extractor.encode_text(caption)
-                output['text_features'] = text_features.detach().cpu()
+                # -------- text (cached) --------
+                captions = list(data['caption'])
+                text_features = encode_text_with_cache(feature_extractor, captions, text_cache)
+                output['text_features'] = text_features.contiguous()
 
                 output_file = this_latent_dir / f'r{rank}_{curr_iter}.pth'
                 torch.save(output, output_file)
@@ -348,13 +393,14 @@ def extract():
                 success_count += len(output['id'])
                 any_success = True
 
-                if batch_count % MEMORY_CHECK_INTERVAL == 0:
+                if batch_count % memory_check_interval == 0:
                     clear_memory_cache()
-                    log.info(f"Processed {batch_count}/{len(loader)} batches")
+                    log.info(f"Processed {batch_count}/{len(loader)} batches | text_cache={len(text_cache)}")
 
             except Exception as e:
                 failed_batch_count += 1
                 log.exception(f"❌ Error processing batch {curr_iter}: {e}")
+                clear_memory_cache()
                 continue
 
         log.info(

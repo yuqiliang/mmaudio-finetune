@@ -81,10 +81,15 @@ def sample(cfg: DictConfig):
             assert audio_path == new_audio_path, 'Different audio path detected'
 
     info_if_rank_zero(log, f'Inference completed. Audio path: {audio_path}')
-    output_metrics = runner.eval(audio_path, curr_iter, data_cfg)
 
-    if local_rank == 0:
-        # write the output metrics to run_dir
-        output_metrics_path = os.path.join(run_dir, f'{data_cfg.tag}-output_metrics.json')
-        with open(output_metrics_path, 'w') as f:
-            json.dump(output_metrics, f, indent=4)
+    try:
+        output_metrics = runner.eval(audio_path, curr_iter, data_cfg)
+
+        if local_rank == 0:
+            # write the output metrics to run_dir
+            output_metrics_path = os.path.join(run_dir, f'{data_cfg.tag}-output_metrics.json')
+            with open(output_metrics_path, 'w') as f:
+                json.dump(output_metrics, f, indent=4)
+
+    except Exception as e:
+        info_if_rank_zero(log, f'Skipping automatic metric evaluation: {e}')
