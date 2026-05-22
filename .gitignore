@@ -1,4 +1,6 @@
 run_*.sh
+!scripts/run_colab_finetune_stride4.sh
+!scripts/run_colab_continue_stride4.sh
 log/
 saves
 saves/
