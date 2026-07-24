@@ -5,6 +5,13 @@
 </p>
 </div>
 
+## Urban soundscape fine-tuning
+
+The project-specific Colab workflow uses manually reviewed, non-overlapping
+8-second clips with `small_44k`. See
+[docs/COLAB_FINE_TUNING.md](docs/COLAB_FINE_TUNING.md) and
+[notebooks/colab_finetune.ipynb](notebooks/colab_finetune.ipynb).
+
 ## [Taming Multimodal Joint Training for High-Quality Video-to-Audio Synthesis](https://hkchengrex.github.io/MMAudio)
 
 [Ho Kei Cheng](https://hkchengrex.github.io/), [Masato Ishii](https://scholar.google.co.jp/citations?user=RRIO1CcAAAAJ), [Akio Hayakawa](https://scholar.google.com/citations?user=sXAjHFIAAAAJ), [Takashi Shibuya](https://scholar.google.com/citations?user=XCRO260AAAAJ), [Alexander Schwing](https://www.alexander-schwing.de/), [Yuki Mitsufuji](https://www.yukimitsufuji.com/)

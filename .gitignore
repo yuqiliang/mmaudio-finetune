@@ -1,4 +1,6 @@
 run_*.sh
+!scripts/run_colab_finetune.sh
+!scripts/run_colab_continue.sh
 log/
 saves
 saves/
@@ -14,6 +16,9 @@ ext_weights
 .checkpoints/
 .vscode/
 training/example_output/
+/outputs/
+/tmp/
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

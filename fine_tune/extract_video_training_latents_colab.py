@@ -2,8 +2,10 @@ import os
 import sys
 import json
 import argparse
+import csv
 import traceback
 from pathlib import Path
+from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader
@@ -19,11 +21,26 @@ from mmaudio.model.utils.features_utils import FeaturesUtils
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
         "--video_dir",
         type=str,
-        required=True,
         help="Directory containing video clips"
+    )
+    source.add_argument(
+        "--manifest",
+        type=str,
+        help="CSV manifest containing absolute_path rows in extraction order",
+    )
+    parser.add_argument(
+        "--path_column",
+        default="absolute_path",
+        help="Manifest column containing video paths",
+    )
+    parser.add_argument(
+        "--path_root",
+        default=None,
+        help="Optional root prepended to relative manifest paths",
     )
     parser.add_argument(
         "--latent_dir",
@@ -85,6 +102,47 @@ def parse_args():
     return parser.parse_args()
 
 
+def read_manifest(path: str, path_column: str, path_root: Optional[str]):
+    manifest_path = Path(path).expanduser().resolve()
+    with manifest_path.open(newline="", encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise ValueError(f"Manifest is empty: {manifest_path}")
+    if path_column not in rows[0]:
+        raise ValueError(f"Manifest has no {path_column!r} column: {manifest_path}")
+    root = Path(path_root).expanduser().resolve() if path_root else None
+    paths = []
+    for row in rows:
+        item = Path(row[path_column]).expanduser()
+        if root is not None:
+            if item.is_absolute():
+                raise ValueError(
+                    f"--path_root requires relative {path_column} values, got {item}"
+                )
+            item = root / item
+        paths.append(str(item))
+    identifiers = [
+        row.get("training_id") or row.get("combined_clip_id") or row.get("clip_id") or ""
+        for row in rows
+    ]
+    return manifest_path, rows, paths, identifiers
+
+
+def write_sample_index(
+    output_path: Path,
+    identifiers: list[str],
+    paths: list[str],
+) -> None:
+    index_path = output_path / "sample_index.csv"
+    temporary = index_path.with_suffix(".csv.tmp")
+    with temporary.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["index", "id", "path"])
+        writer.writeheader()
+        for index, (identifier, path) in enumerate(zip(identifiers, paths)):
+            writer.writerow({"index": index, "id": identifier, "path": path})
+    os.replace(temporary, index_path)
+
+
 def build_feature_extractor(args, device):
     feature_extractor = FeaturesUtils(
         tod_vae_ckpt=args.vae_path,
@@ -117,6 +175,7 @@ def build_metadata(
         "mode": args.mode,
         "audio_sr": args.audio_sr,
         "video_dir": args.video_dir,
+        "manifest": args.manifest,
         "save_name": args.save_name,
         "failed_batches": failed_batches,
         "num_failed_batches": len(failed_batches),
@@ -148,8 +207,20 @@ def main():
     if args.audio_sr is None:
         args.audio_sr = 16000 if args.mode == "16k" else 44100
 
+    manifest_path = None
+    manifest_rows = None
+    identifiers = None
+    video_paths = None
+    if args.manifest:
+        manifest_path, manifest_rows, video_paths, identifiers = read_manifest(
+            args.manifest,
+            args.path_column,
+            args.path_root,
+        )
+
     dataset = CustomVideoDataset(
         video_dir=args.video_dir,
+        video_paths=video_paths,
         debug_limit=args.debug_limit,
         audio_sr=args.audio_sr,
         clip_frame_size=args.clip_frame_size,
@@ -178,6 +249,8 @@ def main():
     first_batch_shapes = None
 
     expected_shapes = {
+        "latent_feature_seq_len": 250 if args.mode == "16k" else 345,
+        "latent_dim": 20 if args.mode == "16k" else 40,
         "clip_video_frames": 64,
         "sync_video_frames": 200,      # official 8s * 25fps input to sync encoder
         "clip_feature_seq_len": 64,
@@ -278,7 +351,18 @@ def main():
 
             bsz = mean.shape[0]
 
-            if batch_idx == 0:
+            if mean.shape[1] != expected_shapes["latent_feature_seq_len"]:
+                raise AssertionError(
+                    f"latent length mismatch: got {mean.shape}, "
+                    f"expected {expected_shapes['latent_feature_seq_len']}"
+                )
+            if mean.shape[2] != expected_shapes["latent_dim"]:
+                raise AssertionError(
+                    f"latent dimension mismatch: got {mean.shape}, "
+                    f"expected {expected_shapes['latent_dim']}"
+                )
+
+            if first_batch_shapes is None:
                 first_batch_shapes = {
                     "mean": list(mean.shape),
                     "std": list(std.shape),
@@ -373,10 +457,20 @@ def main():
                 expected_shapes=expected_shapes,
             )
             save_metadata(save_path, metadata)
-            continue
+            raise
 
     if memmap_td is None or write_index == 0:
         raise RuntimeError("No data was successfully processed.")
+
+    if write_index != dataset_size:
+        raise RuntimeError(
+            f"Extraction is incomplete: wrote {write_index}/{dataset_size} samples"
+        )
+    if manifest_path is not None:
+        assert manifest_rows is not None
+        assert identifiers is not None
+        assert video_paths is not None
+        write_sample_index(save_path, identifiers[:dataset_size], video_paths[:dataset_size])
 
     print(f"\nStreaming memmap saved to: {save_path}")
     print(f"Successfully written samples: {write_index}")
