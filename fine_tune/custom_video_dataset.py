@@ -1,6 +1,7 @@
-import os
 import glob
-from typing import List, Dict, Any, Optional, Tuple
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -28,8 +29,10 @@ class CustomVideoDataset(Dataset):
 
     def __init__(
         self,
-        video_dir: str,
+        video_dir: Optional[str] = None,
+        video_paths: Optional[Sequence[Union[str, Path]]] = None,
         text_label: str = "urban soundscape",
+        duration_seconds: float = 8.0,
         clip_num_frames: int = 64,
         sync_num_frames: int = 200,   # official: 8s * 25fps
         clip_frame_size: int = 384,
@@ -40,8 +43,12 @@ class CustomVideoDataset(Dataset):
     ):
         super().__init__()
 
+        if (video_dir is None) == (video_paths is None):
+            raise ValueError("Provide exactly one of video_dir or video_paths")
+
         self.video_dir = video_dir
         self.text_label = text_label
+        self.duration_seconds = duration_seconds
         self.clip_num_frames = clip_num_frames
         self.sync_num_frames = sync_num_frames
         self.clip_frame_size = clip_frame_size
@@ -51,20 +58,28 @@ class CustomVideoDataset(Dataset):
         if extensions is None:
             extensions = ["mp4", "mov", "mkv", "avi", "webm", "m4v"]
 
-        self.video_paths = []
-        for ext in extensions:
-            self.video_paths.extend(glob.glob(os.path.join(video_dir, f"*.{ext}")))
-            self.video_paths.extend(glob.glob(os.path.join(video_dir, f"*.{ext.upper()}")))
-
-        self.video_paths = sorted(list(set(self.video_paths)))
+        if video_paths is not None:
+            self.video_paths = [str(Path(path).expanduser().resolve()) for path in video_paths]
+        else:
+            assert video_dir is not None
+            discovered = []
+            for ext in extensions:
+                discovered.extend(glob.glob(os.path.join(video_dir, f"*.{ext}")))
+                discovered.extend(glob.glob(os.path.join(video_dir, f"*.{ext.upper()}")))
+            self.video_paths = sorted(set(discovered))
 
         if debug_limit is not None:
             self.video_paths = self.video_paths[:debug_limit]
 
         if len(self.video_paths) == 0:
-            raise FileNotFoundError(f"No video files found in: {video_dir}")
+            raise FileNotFoundError(f"No video files found in: {video_dir or 'manifest'}")
+        if len(self.video_paths) != len(set(self.video_paths)):
+            raise ValueError("Video paths must be unique")
 
-        print(f"Found {len(self.video_paths)} video files in {video_dir}")
+        missing = [path for path in self.video_paths if not Path(path).is_file()]
+        if missing:
+            raise FileNotFoundError(f"Manifest-listed video does not exist: {missing[0]}")
+        print(f"Found {len(self.video_paths)} video files")
 
     def __len__(self) -> int:
         return len(self.video_paths)
@@ -136,7 +151,8 @@ class CustomVideoDataset(Dataset):
 
         if audio.numel() == 0:
             fallback_sr = self.audio_sr if self.audio_sr is not None else 16000
-            silent = torch.zeros(1, fallback_sr, dtype=torch.float32)
+            target_samples = round(fallback_sr * self.duration_seconds)
+            silent = torch.zeros(1, target_samples, dtype=torch.float32)
             return silent, fallback_sr
 
         audio = audio.float()
@@ -159,6 +175,12 @@ class CustomVideoDataset(Dataset):
         if self.audio_sr is not None and audio_fps != self.audio_sr:
             audio = self._resample_audio(audio, audio_fps, self.audio_sr)
             audio_fps = self.audio_sr
+
+        target_samples = round(audio_fps * self.duration_seconds)
+        if audio.shape[-1] < target_samples:
+            audio = F.pad(audio, (0, target_samples - audio.shape[-1]))
+        else:
+            audio = audio[..., :target_samples]
 
         return audio.contiguous(), int(audio_fps)
 

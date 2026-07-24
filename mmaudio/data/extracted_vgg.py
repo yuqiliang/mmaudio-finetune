@@ -38,6 +38,23 @@ class ExtractedVGG(Dataset):
         self.sync_features = td['sync_features']
         self.text_features = td['text_features']
 
+        expected_rows = len(self.df_list)
+        feature_rows = {
+            'mean': self.mean.shape[0],
+            'std': self.std.shape[0],
+            'clip_features': self.clip_features.shape[0],
+            'sync_features': self.sync_features.shape[0],
+            'text_features': self.text_features.shape[0],
+        }
+        mismatched = {
+            name: rows for name, rows in feature_rows.items() if rows != expected_rows
+        }
+        if mismatched:
+            raise ValueError(
+                f'TSV/memmap row mismatch: tsv={expected_rows}, features={mismatched}. '
+                'Extract each split from its matching ordered manifest.'
+            )
+
         if local_rank == 0:
             log.info(f'Loaded {len(self)} samples.')
             log.info(f'Loaded mean: {self.mean.shape}.')
@@ -88,7 +105,7 @@ class ExtractedVGG(Dataset):
         caption_value = item.get('caption', item.get('label', 'urban soundscape'))
 
         data = {
-            'id': item['id'],
+            'id': str(item['id']),
             'a_mean': self.mean[idx],
             'a_std': self.std[idx],
             'clip_features': self.clip_features[idx],
