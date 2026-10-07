@@ -146,6 +146,8 @@ We believe all of these three limitations can be addressed with more high-qualit
 
 See [TRAINING.md](docs/TRAINING.md).
 
+For the expanded 7,740-clip fine-tuning workflow, use [official Colab training](docs/COLAB_OFFICIAL_TRAINING.md) and its [notebook](notebooks/colab_official_training.ipynb). This path preserves the completed media features, requires human-reviewed captions, and gates training on a Drive-recovery smoke test. Myriad is reserved for subsequent perception embedding training.
+
 ## Evaluation
 
 See [EVAL.md](docs/EVAL.md).

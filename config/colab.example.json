@@ -1,0 +1,28 @@
+{
+  "schema": "colab_training_config_v1",
+  "code_root": "/content/mmaudio-finetune",
+  "python": "/usr/bin/python3",
+  "official_repo": "/content/MMAudio-official",
+  "weights_dir": "/content/mmaudio-weights",
+  "clip_snapshot": null,
+  "clip_revision": "01b771ed0d1395ca5ffdd279897d665ebe00dfd2",
+  "vocoder_snapshot": null,
+  "vocoder_revision": "95a9d1dcb12906c03edd938d77b9333d6ded7dfb",
+  "pretrained": "/content/mmaudio-weights/mmaudio_small_44k.pth",
+  "drive_mount": "/content/drive",
+  "drive_bundle_ready": null,
+  "bundle_ready": "/content/mmaudio-features/bundle_v1/BUNDLE_READY.json",
+  "bundle_sha256": null,
+  "binding": "/content/mmaudio-bindings/bundle_v1.json",
+  "smoke_run": "/content/mmaudio-runs/smoke_v1",
+  "train_run": "/content/mmaudio-runs/train_v1",
+  "smoke_backup": null,
+  "train_backup": null,
+  "session_updates": 250,
+  "recipe": {
+    "batch_size": 2, "val_batch_size": 2, "learning_rate": 0.00002, "warmup_steps": 50,
+    "weight_decay": 0.000001, "gradient_clip": 1.0, "seed": 14159265,
+    "num_workers": 2, "precision": "bf16", "steps": null,
+    "save_every": 100, "val_every": 500, "ema_every": 500
+  }
+}

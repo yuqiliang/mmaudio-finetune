@@ -1,0 +1,10 @@
+{
+  "scope": "Preserved media identity and extraction source snapshot",
+  "upstream_commit": "974010a026c731054592d8f777218bd9d85a6c24",
+  "files_sha256": {
+    "fine_tune/official_common.py": "474b17d576757523f6e79067978adc26dc3e2c0485685fd8ecb1336c8f3f2073",
+    "fine_tune/official_extract.py": "fdb055f1878e4b7ec878e16ca3aee79f24bfb8b0b2f41341b4a8a98ae26ed5fc",
+    "fine_tune/official_media_extract.py": "5734d8ccdacc7ce638f62c325cfe833837addb70ed01439a45602355801eaa5a"
+  },
+  "note": "These files remain byte-identical to the completed Colab media workflow; portable bundle and training orchestration are separate additions."
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "myriad_training_config_v1",
+  "scheduler": "sge",
+  "scheduler_verified": false,
+  "code_root": null,
+  "python": null,
+  "official_repo": null,
+  "weights_dir": null,
+  "clip_snapshot": null,
+  "clip_revision": "01b771ed0d1395ca5ffdd279897d665ebe00dfd2",
+  "vocoder_snapshot": null,
+  "vocoder_revision": "95a9d1dcb12906c03edd938d77b9333d6ded7dfb",
+  "pretrained": null,
+  "bundle_ready": null,
+  "bundle_sha256": null,
+  "binding": null,
+  "smoke_run": null,
+  "train_run": null,
+  "job_output": null,
+  "modules": [],
+  "resources": {"cores": 4, "mem_per_core": "8G", "tmpfs": "30G", "walltime": "01:00:00", "gpu_count": 1},
+  "recipe": {
+    "batch_size": 2, "learning_rate": 0.00002, "warmup_steps": 50,
+    "weight_decay": 0.000001, "gradient_clip": 1.0, "seed": 14159265,
+    "num_workers": 2, "precision": "bf16", "steps": null,
+    "save_every": 500, "val_every": 500, "ema_every": 500
+  }
+}
