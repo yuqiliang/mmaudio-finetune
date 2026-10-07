@@ -144,3 +144,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Private migration receipts, manifests, local cluster paths and generated jobs
+/outputs/
+/config/myriad.local.json
+/config/transfer.local.json
+.DS_Store
