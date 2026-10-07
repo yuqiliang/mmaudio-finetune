@@ -181,6 +181,8 @@ def recipe_identity(args: argparse.Namespace, ready: dict, weights: dict) -> dic
     if ready.get("schema_version") == 2:
         identity["portable_bundle_validator_sha256"] = sha256_file(Path(__file__).with_name("official_feature_bundle.py"))
         identity["checkpoint_roundtrip_required"] = True
+    if args.backup_dir:
+        identity["snapshot_writer_sha256"] = sha256_file(Path(__file__).with_name("run_snapshot.py"))
     return identity
 
 
@@ -240,6 +242,10 @@ def preflight(args: argparse.Namespace) -> dict:
     identity = recipe_identity(args, ready, weights)
     identity["empty_string_sha256"] = sha256_file(empty)
     run_dir = Path(args.run_dir).expanduser().resolve()
+    if args.backup_dir:
+        backup_dir = Path(args.backup_dir).expanduser().resolve()
+        if backup_dir.is_relative_to(run_dir) or run_dir.is_relative_to(backup_dir):
+            raise ValueError("Backup and training run directories must not overlap")
     if not args.smoke:
         if not args.smoke_report:
             raise ValueError("Formal run requires --smoke-report from a completed matching smoke run")
@@ -272,7 +278,8 @@ def preflight(args: argparse.Namespace) -> dict:
 def runtime_policy(args: argparse.Namespace) -> dict:
     return {"val_batch_size": args.val_batch_size, "val_every": args.val_every,
             "save_every": args.save_every, "ema_every": args.steps if args.smoke else args.ema_every,
-            "smoke": args.smoke, "checkpoint_probe": args.checkpoint_probe, "num_workers": args.num_workers}
+            "smoke": args.smoke, "checkpoint_probe": args.checkpoint_probe, "num_workers": args.num_workers,
+            "backup_dir": str(Path(args.backup_dir).resolve()) if args.backup_dir else None}
 
 
 def execution_identity(torch):
@@ -635,6 +642,9 @@ def _execute_locked(args: argparse.Namespace, checked: dict) -> None:
             receipt.update(recipe=checked["recipe"], completed_updates=steps, utc=utc())
             atomic_json(target.with_suffix(".json"), receipt)
             atomic_json(out / "latest_checkpoint.json", receipt)
+            if args.backup_dir:
+                from fine_tune.run_snapshot import save
+                save(out, args.backup_dir)
 
         def validate():
             nonlocal best_validation
@@ -700,16 +710,19 @@ def _execute_locked(args: argparse.Namespace, checked: dict) -> None:
                             trainer.train_integrator.binned_tensor_indices.clear()
                     if steps % args.val_every == 0 or steps == args.steps:
                         validate()
-                    if steps % args.save_every == 0 or steps == args.steps:
-                        save_checkpoint()
                     if args.stop_after is not None and steps >= args.stop_after:
                         stop["requested"] = True
                         break
+                    if steps % args.save_every == 0 or steps == args.steps:
+                        save_checkpoint()
                     if steps >= args.steps:
                         break
         if stop["requested"]:
             save_checkpoint()
             publish("paused", completed_updates=steps)
+            if args.backup_dir:
+                from fine_tune.run_snapshot import save
+                save(out, args.backup_dir)
             return
         if args.smoke:
             changed = [name for name, p in parameters.items() if not torch.equal(initial[name], p.detach().cpu())]
@@ -746,6 +759,9 @@ def _execute_locked(args: argparse.Namespace, checked: dict) -> None:
                         "best_validation": best_validation,
                         "recipe": checked["recipe"], "test_evaluation_started": False, "utc": utc()})
         publish("complete", completed_updates=steps)
+        if args.backup_dir:
+            from fine_tune.run_snapshot import save
+            save(out, args.backup_dir)
     except BaseException as exc:
         publish("failed", completed_updates=steps, error=str(exc), traceback=traceback.format_exc())
         raise
@@ -781,6 +797,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--resume", help="Explicit checkpoint from the same existing run")
     result.add_argument("--checkpoint-probe", action="store_true", help="Smoke must verify an interrupted checkpoint in a new process")
     result.add_argument("--stop-after", type=int, help="Save and pause after this completed update, preserving the target recipe")
+    result.add_argument("--backup-dir", help="Synchronous verified recovery snapshots after every checkpoint; separate from the local run")
     result.add_argument("--execute", action="store_true", help="Authorize CUDA training; otherwise dry-run only")
     return result
 

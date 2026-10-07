@@ -1,5 +1,7 @@
 # Expanded 7740：Colab 收尾与 Myriad 训练准备
 
+> **2026-10-07 路线更新：本页的 Myriad MMAudio 训练部分保留为备选。当前 MMAudio 训练改为 [Colab 全流程](COLAB_OFFICIAL_TRAINING.md)，Myriad 留给后续 perception embedding 训练。下方第 1–2 节的 Caption、文本特征和训练包准备仍适用；第 3–5 节的 Myriad 迁移/作业无需执行。这些 MMAudio 作业不应直接当作 perception embedding 训练入口。**
+
 ## 当前事实与边界（2026-10-07）
 
 **VERIFIED FACT**：扩展集使用官方 `small_44k` 路线；7740 条音视频特征已由 Colab 完成收据确认，分为 train 6203 / val 780 / test 757，来自 85 个 source recording。本次准备重新校验了完成收据的 SHA256、完整 ID 顺序、split、media plan 和 run 绑定，没有在本机重新下载或遍历 7740 条张量。
@@ -16,7 +18,7 @@
 
 完成收据为 `MEDIA_7740_CPU_VERIFIED`，时间为 2026-10-07 13:41:20 UTC。此收据仍明确 `training_ready=false`。音视频四项特征是 `mean`、`std`、`clip_features`、`sync_features`；Caption 人审尚未完成（用户已确认），文本特征、五模态最终包、Myriad smoke 和正式训练均未完成。不要将历史 6941 条 `small_16k` pilot 的 checkpoint 或指标用于此路线。
 
-**PLANNED**：Caption 人审 → 冻结 → Colab 仅提取文本 → Colab CPU 合并/逐元素回读 → Drive 持久化 → Myriad 直接拉取 → 校验 → 两进程 smoke → 正式训练。原媒体 cache 和完成收据保持原字节。所有 Python 新入口默认只读，写入/计算需显式 `--execute`；渲染作业不提交作业。
+**HISTORICAL PLAN（已替换）**：曾计划在 Colab 完成特征后迁移至 Myriad。当前训练安排见页首更新；原媒体 cache 和完成收据保持原字节。所有 Python 新入口默认只读，写入/计算需显式 `--execute`；渲染作业不提交作业。
 
 ## 1. Caption 审核与冻结
 
